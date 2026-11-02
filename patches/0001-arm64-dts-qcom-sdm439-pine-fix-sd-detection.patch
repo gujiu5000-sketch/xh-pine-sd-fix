@@ -1,0 +1,46 @@
+From: Xinghe Defense Group <ops@xh-defense.local>
+Subject: [PATCH] arm64: dts: qcom: sdm439-xiaomi-pine: fix SD card detection
+
+The microSD slot on Xiaomi Redmi 7A (pine) is not detected at all under
+mainline: mmc@7864900 (SDC2) probes, but every attempt to talk to the card
+times out (CMD8/CMD5 -> -110) and no mmcblk1 is created.
+
+Root cause: the board drives the SD slot I/O at 3.3 V, but vqmmc-supply
+points at pm8953_l12, which is limited to 1.8 V
+(regulator-max-microvolt = <1800000>). With the I/O rail at 1.8 V the card
+never receives valid commands.
+
+Fix: use the 3.3 V rail (pm8953_l11, already used for vmmc) for vqmmc as
+well, forbid 1.8 V signalling with no-1-8-v, and rely on polling with
+broken-cd since the card-detect IRQ never fires on this board.
+
+Tested on Xiaomi Redmi 7A (pine), postmarketOS edge, kernel 7.1.3-msm89x7.
+Without the patch there is no /dev/mmcblk1; with it:
+
+  mmc1: new high speed SDHC card at address 0001
+  mmcblk1: mmc1:0001 SD16G 29.8 GiB
+   mmcblk1: p1
+
+Signed-off-by: Xinghe Defense Group <ops@xh-defense.local>
+---
+ arch/arm64/boot/dts/qcom/sdm439-xiaomi-pine.dts | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm64/boot/dts/qcom/sdm439-xiaomi-pine.dts b/arch/arm64/boot/dts/qcom/sdm439-xiaomi-pine.dts
+--- a/arch/arm64/boot/dts/qcom/sdm439-xiaomi-pine.dts
++++ b/arch/arm64/boot/dts/qcom/sdm439-xiaomi-pine.dts
+@@ -293,7 +293,14 @@ &sdhc_2 {
+ 	cd-gpios = <&tlmm 67 GPIO_ACTIVE_HIGH>;
+ 	vmmc-supply = <&pm8953_l11>;
+-	vqmmc-supply = <&pm8953_l12>;
++	/*
++	 * The SD slot I/O is 3.3 V on this board. pm8953_l12 is limited to
++	 * 1.8 V, so the card never answers CMD8/CMD5 and is not detected.
++	 * Use the 3.3 V rail and forbid 1.8 V signalling.
++	 */
++	vqmmc-supply = <&pm8953_l11>;
++	no-1-8-v;
++	broken-cd;
+ 	pinctrl-0 = <&sdc2_default &sdc2_cd_default>;
+ 	pinctrl-1 = <&sdc2_sleep &sdc2_cd_default>;
+ 	pinctrl-names = "default", "sleep";
